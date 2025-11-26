@@ -38,18 +38,23 @@ jobs:
           cd ..
 
       - name: Sign Firefox addon
-        if: ${{ secrets.MOZILLA_API_KEY != '' }}
+        continue-on-error: true
         env:
           MOZILLA_API_KEY: ${{ secrets.MOZILLA_API_KEY }}
           MOZILLA_API_SECRET: ${{ secrets.MOZILLA_API_SECRET }}
         run: |
-          npm install -g web-ext
-          web-ext sign \
-            --api-key="$MOZILLA_API_KEY" \
-            --api-secret="$MOZILLA_API_SECRET" \
-            --channel=unlisted \
-            --source-dir=dist \
-            --artifacts-dir=./signed
+          if [ -n "$MOZILLA_API_KEY" ]; then
+            npm install -g web-ext
+            web-ext sign \
+              --api-key="$MOZILLA_API_KEY" \
+              --api-secret="$MOZILLA_API_SECRET" \
+              --channel=unlisted \
+              --source-dir=dist \
+              --artifacts-dir=./signed
+          else
+            echo "Skipping Firefox signing (no API keys)"
+            mkdir -p signed
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
