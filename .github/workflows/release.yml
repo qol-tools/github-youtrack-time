@@ -60,10 +60,17 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            signed/*.xpi
             github-youtrack-time-firefox.zip
             github-youtrack-time-chrome.zip
+            signed/*.xpi
           draft: false
           prerelease: false
+          body: |
+            ## Installation
+
+            **Firefox:** Download and install `github-youtrack-time-firefox.zip` (load as temporary add-on)
+            **Chrome/Edge:** Download `github-youtrack-time-chrome.zip`, extract, and load unpacked
+
+            If signed `.xpi` is available, Firefox users can install that directly instead.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
