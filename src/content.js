@@ -362,15 +362,15 @@ function createModal(issueId) {
 	const saveWorkTypeBtn = createElement('button', {
 		type: 'button',
 		className: 'yt-save-work-type',
-		disabled: !isSubdomainSaved,
+		disabled: !(isSubdomainSaved && isTokenSaved),
 		style: {
 			padding: '8px 16px',
 			fontSize: '14px',
 			border: '1px solid #d1d5da',
 			borderRadius: '6px',
-			backgroundColor: isSubdomainSaved ? '#2da44e' : '#e5e7eb',
+			backgroundColor: (isSubdomainSaved && isTokenSaved) ? '#2da44e' : '#e5e7eb',
 			color: '#ffffff',
-			cursor: isSubdomainSaved ? 'pointer' : 'not-allowed',
+			cursor: (isSubdomainSaved && isTokenSaved) ? 'pointer' : 'not-allowed',
 			whiteSpace: 'nowrap',
 		}
 	}, 'Save');
