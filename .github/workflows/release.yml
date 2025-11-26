@@ -1,0 +1,64 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Package Firefox
+        run: |
+          cd dist
+          zip -r ../github-youtrack-time-firefox.zip .
+          cd ..
+
+      - name: Package Chrome
+        run: |
+          cd dist
+          zip -r ../github-youtrack-time-chrome.zip .
+          cd ..
+
+      - name: Sign Firefox addon
+        if: ${{ secrets.MOZILLA_API_KEY != '' }}
+        env:
+          MOZILLA_API_KEY: ${{ secrets.MOZILLA_API_KEY }}
+          MOZILLA_API_SECRET: ${{ secrets.MOZILLA_API_SECRET }}
+        run: |
+          npm install -g web-ext
+          web-ext sign \
+            --api-key="$MOZILLA_API_KEY" \
+            --api-secret="$MOZILLA_API_SECRET" \
+            --channel=unlisted \
+            --source-dir=dist \
+            --artifacts-dir=./signed
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            signed/*.xpi
+            github-youtrack-time-firefox.zip
+            github-youtrack-time-chrome.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
