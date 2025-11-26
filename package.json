@@ -1,0 +1,24 @@
+{
+	"name": "github-youtrack-time",
+	"version": "1.0.0",
+	"description": "Add YouTrack time tracking to GitHub Pull Requests",
+	"scripts": {
+		"build": "node build.js",
+		"package:firefox": "npm run build && web-ext build --source-dir=dist --overwrite-dest --artifacts-dir=packages",
+		"package:chrome": "npm run build && cd dist && zip -r ../packages/github-youtrack-time-chrome.zip . && cd ..",
+		"package": "npm run package:firefox && npm run package:chrome",
+		"run:firefox": "npm run build && web-ext run --source-dir=dist --firefox-profile=/tmp/yt-test-profile",
+		"run:chrome": "npm run build && web-ext run --source-dir=dist --chromium-profile=/tmp/yt-test-profile --target=chromium"
+	},
+	"devDependencies": {
+		"web-ext": "^8.3.0"
+	},
+	"keywords": [
+		"github",
+		"youtrack",
+		"time-tracking",
+		"browser-extension"
+	],
+	"author": "",
+	"license": "MIT"
+}

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Install GitHub YouTrack Time Tracker</title>
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 20px;
+		}
+		.container {
+			background: white;
+			border-radius: 16px;
+			padding: 48px;
+			max-width: 600px;
+			box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+		}
+		h1 {
+			font-size: 32px;
+			margin-bottom: 16px;
+			color: #1a1a1a;
+		}
+		p {
+			color: #666;
+			margin-bottom: 32px;
+			font-size: 16px;
+			line-height: 1.5;
+		}
+		.buttons {
+			display: flex;
+			gap: 16px;
+			flex-direction: column;
+		}
+		button {
+			padding: 20px 32px;
+			font-size: 18px;
+			font-weight: 600;
+			border: none;
+			border-radius: 12px;
+			cursor: pointer;
+			transition: transform 0.2s, box-shadow 0.2s;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 12px;
+		}
+		button:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+		}
+		button:active {
+			transform: translateY(0);
+		}
+		.firefox {
+			background: #FF7139;
+			color: white;
+		}
+		.chrome {
+			background: #4285F4;
+			color: white;
+		}
+		.icon {
+			font-size: 24px;
+		}
+		.note {
+			margin-top: 24px;
+			padding: 16px;
+			background: #f5f5f5;
+			border-radius: 8px;
+			font-size: 14px;
+			color: #666;
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>⏱️ GitHub YouTrack Time Tracker</h1>
+		<p>Add time tracking to YouTrack issues directly from GitHub Pull Requests</p>
+
+		<div class="buttons">
+			<button class="firefox" onclick="installFirefox()">
+				<span class="icon">🦊</span>
+				<span>Install for Firefox</span>
+			</button>
+			<button class="chrome" onclick="installChrome()">
+				<span class="icon">🌐</span>
+				<span>Install for Chrome/Edge</span>
+			</button>
+		</div>
+
+		<div class="note">
+			After installing, open any GitHub PR with a YouTrack ID (like ABC-123) in the title, click "Add Time", and follow the setup.
+		</div>
+	</div>
+
+	<script>
+		function installFirefox() {
+			window.location.href = 'packages/github_youtrack_time_tracker-1.0.0.zip';
+		}
+
+		function installChrome() {
+			alert('Chrome Installation:\n\n1. The .zip file will download\n2. Extract it\n3. Go to chrome://extensions/\n4. Enable "Developer mode"\n5. Click "Load unpacked"\n6. Select the extracted folder');
+			window.location.href = 'packages/github-youtrack-time-chrome.zip';
+		}
+	</script>
+</body>
+</html>

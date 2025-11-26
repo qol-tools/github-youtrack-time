@@ -1,0 +1,9 @@
+/* GitHub YouTrack Time Tracker Styles */
+.yt-time-button {
+	display: inline-flex !important;
+	align-items: center;
+}
+
+.yt-time-modal * {
+	box-sizing: border-box;
+}
