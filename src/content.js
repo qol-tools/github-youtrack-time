@@ -1,11 +1,61 @@
 // GitHub YouTrack Time Tracker - Standalone Extension
+
 // Storage keys
 const STORAGE_KEY_SUBDOMAIN = 'yt-subdomain';
 const STORAGE_KEY_WORK_ITEM_TYPE = 'yt-work-item-type';
 const STORAGE_KEY_TOKEN = 'yt-token';
 
+// UI Constants
+const COLORS = {
+	LIGHT: {
+		bg: '#ffffff',
+		bgSecondary: '#f6f8fa',
+		border: '#d1d5da',
+		text: '#24292e',
+		textSecondary: '#57606a',
+		buttonBg: '#2da44e',
+		buttonDisabled: '#e5e7eb',
+		errorBg: '#ffeef0',
+		errorText: '#d1242f',
+	},
+	DARK: {
+		bg: '#0d1117',
+		bgSecondary: '#161b22',
+		border: '#30363d',
+		text: '#c9d1d9',
+		textSecondary: '#8b949e',
+		buttonBg: '#238636',
+		buttonDisabled: '#21262d',
+		errorBg: '#422426',
+		errorText: '#ff7b72',
+	}
+};
+
+// Timing constants
+const THROTTLE_DELAY_MS = 100;
+const POLL_INTERVAL_MS = 500;
+const POLL_MAX_ATTEMPTS = 20;
+
+// Regex patterns
+const YOUTRACK_ID_PATTERN = /[A-Z]+-\d+/;
+const PR_PAGE_PATTERN = /\/pull\/\d+/;
+const DARK_MODE_RGB_THRESHOLD = 50;
+
 // API Functions
+
+/**
+ * @param {string} subdomain - YouTrack subdomain
+ * @param {string} token - YouTrack API token
+ * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
+ */
 async function fetchWorkItemTypes(subdomain, token) {
+	if (!subdomain || typeof subdomain !== 'string') {
+		return { ok: false, error: 'Invalid subdomain' };
+	}
+	if (!token || typeof token !== 'string') {
+		return { ok: false, error: 'Invalid token' };
+	}
+
 	try {
 		return await chrome.runtime.sendMessage({
 			action: 'ytbridge.request',
@@ -18,11 +68,21 @@ async function fetchWorkItemTypes(subdomain, token) {
 			},
 		});
 	} catch (error) {
-		return { ok: false, error: error.message || 'Request failed' };
+		return { ok: false, error: error?.message || 'Request failed' };
 	}
 }
 
+/**
+ * @param {string} subdomain - YouTrack subdomain
+ * @param {string} issueId - Issue ID to fetch links for
+ * @param {string} token - YouTrack API token
+ * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
+ */
 async function fetchIssueLinks(subdomain, issueId, token) {
+	if (!subdomain || !issueId || !token) {
+		return { ok: false, error: 'Missing required parameters' };
+	}
+
 	try {
 		const linkQuery = (
 			'id,direction(),linkType(id,directed,aggregation,sourceToTarget,targetToSource,'
@@ -59,7 +119,18 @@ async function fetchIssueLinks(subdomain, issueId, token) {
 	}
 }
 
+/**
+ * @param {string} subdomain - YouTrack subdomain
+ * @param {string} issueId - Issue ID to add time to
+ * @param {Object} request - Time tracking request object
+ * @param {string} token - YouTrack API token
+ * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
+ */
 async function addSpentTime(subdomain, issueId, request, token) {
+	if (!subdomain || !issueId || !request || !token) {
+		return { ok: false, error: 'Missing required parameters' };
+	}
+
 	try {
 		return await chrome.runtime.sendMessage({
 			action: 'ytbridge.request',
@@ -78,36 +149,87 @@ async function addSpentTime(subdomain, issueId, request, token) {
 	}
 }
 
+/**
+ * Extracts YouTrack issue ID from GitHub PR title
+ * @returns {string|null} YouTrack issue ID or null if not found
+ */
 function extractYouTrackId() {
 	const titleEl = document.querySelector('.gh-header-title .js-issue-title');
-	if (!titleEl) {
+	if (!titleEl || !titleEl.textContent) {
 		return null;
 	}
-	const match = titleEl.textContent?.match(/[A-Z]+-\d+/);
-	return match ? match[0] : null;
+
+	const match = titleEl.textContent.match(YOUTRACK_ID_PATTERN);
+	return match?.[0] ?? null;
 }
 
+/**
+ * Parses time string to minutes
+ * @param {string} timeStr - Time string (e.g., "30m", "2h", "0.5d")
+ * @returns {number} Time in minutes
+ * @throws {Error} If format is invalid
+ */
 function parseTimeToMinutes(timeStr) {
-	const match = timeStr.match(/^(\d+(?:\.\d+)?)\s*([mhd])?$/i);
+	if (!timeStr || typeof timeStr !== 'string') {
+		throw new Error('Invalid time format. Use: 5m, 1h, 1d, etc.');
+	}
+
+	const match = timeStr.trim().match(/^(\d+(?:\.\d+)?)\s*([mhd])?$/i);
 	if (!match) {
 		throw new Error('Invalid time format. Use: 5m, 1h, 1d, etc.');
 	}
 
 	const value = parseFloat(match[1]);
+	if (isNaN(value) || value <= 0) {
+		throw new Error('Time value must be a positive number');
+	}
+
 	const unit = (match[2] || 'm').toLowerCase();
+	const MINUTES_PER_HOUR = 60;
+	const HOURS_PER_DAY = 8;
 
 	switch (unit) {
 		case 'm':
 			return Math.round(value);
 		case 'h':
-			return Math.round(value * 60);
+			return Math.round(value * MINUTES_PER_HOUR);
 		case 'd':
-			return Math.round(value * 60 * 8); // 8 hour workday
+			return Math.round(value * MINUTES_PER_HOUR * HOURS_PER_DAY);
 		default:
 			throw new Error('Invalid time unit. Use: m (minutes), h (hours), d (days)');
 	}
 }
 
+/**
+ * Detects if GitHub is in dark mode
+ * @returns {boolean} True if dark mode is active
+ */
+function isDarkMode() {
+	const htmlBg = window.getComputedStyle(document.documentElement).backgroundColor;
+	const match = htmlBg.match(/rgb\((\d+)/);
+	if (!match) {
+		return false;
+	}
+
+	const redValue = parseInt(match[1], 10);
+	return !isNaN(redValue) && redValue < DARK_MODE_RGB_THRESHOLD;
+}
+
+/**
+ * Gets theme colors based on current mode
+ * @returns {Object} Theme color object
+ */
+function getTheme() {
+	return isDarkMode() ? COLORS.DARK : COLORS.LIGHT;
+}
+
+/**
+ * Creates a DOM element with props and children
+ * @param {string} tag - HTML tag name
+ * @param {Object} props - Element properties
+ * @param {...(string|HTMLElement)} children - Child elements or text
+ * @returns {HTMLElement}
+ */
 function createElement(tag, props, ...children) {
 	const el = document.createElement(tag);
 	if (props) {
@@ -150,6 +272,8 @@ function createModal(issueId) {
 	let isWorkItemTypeSaved = !!savedWorkItemType;
 	let hasSubtasks = false;
 
+	const theme = getTheme();
+
 	const overlay = createElement('div', {
 		className: 'yt-time-modal',
 		style: {
@@ -158,7 +282,7 @@ function createModal(issueId) {
 			left: '0',
 			right: '0',
 			bottom: '0',
-			backgroundColor: 'rgba(0, 0, 0, 0.7)',
+			backgroundColor: isDarkMode() ? 'rgba(1, 4, 9, 0.8)' : 'rgba(0, 0, 0, 0.7)',
 			display: 'flex',
 			alignItems: 'center',
 			justifyContent: 'center',
@@ -169,15 +293,21 @@ function createModal(issueId) {
 	const modalContent = createElement('div', {
 		className: 'yt-time-modal-content',
 		style: {
-			backgroundColor: '#ffffff',
-			border: '1px solid #d1d5da',
+			backgroundColor: theme.bg,
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
 			padding: '24px',
 			width: '400px',
 			boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-			color: '#24292e',
+			color: theme.text,
+			boxSizing: 'border-box',
 		}
 	});
+
+	// Apply box-sizing to all elements
+	const style = createElement('style');
+	style.textContent = '.yt-time-modal-content *, .yt-time-modal-content *::before, .yt-time-modal-content *::after { box-sizing: border-box; }';
+	modalContent.appendChild(style);
 
 	// Title
 	const title = createElement('h2', {
@@ -188,70 +318,79 @@ function createModal(issueId) {
 	// Subdomain Input
 	const subdomainInputDiv = createElement('div', {
 		className: 'yt-subdomain-input',
-		style: { marginBottom: '16px', display: !isSubdomainSaved ? 'block' : 'none' }
+		style: { marginBottom: '16px', display: !isSubdomainSaved ? 'block' : 'none', minHeight: '76px' }
 	});
 	const subdomainLabel = createElement('label', {
 		htmlFor: 'yt-subdomain',
 		style: { display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }
-	}, 'YouTrack Subdomain');
-	const subdomainInputGroup = createElement('div', { style: { display: 'flex', gap: '8px' } });
+	}, 'YouTrack Organization');
+	const subdomainInputWrapper = createElement('div', { style: { display: 'flex', gap: '4px', alignItems: 'center', flex: '1', minWidth: '0' } });
 	const subdomainInput = createElement('input', {
 		id: 'yt-subdomain',
 		type: 'text',
-		placeholder: 'e.g., mycompany',
+		placeholder: 'mycompany',
 		value: savedSubdomain || '',
 		style: {
 			flex: '1',
+			minWidth: '0',
 			padding: '8px 12px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 		}
 	});
+	const subdomainSuffix = createElement('span', {
+		style: { fontSize: '14px', color: theme.textSecondary, whiteSpace: 'nowrap', flexShrink: '0' }
+	}, '.youtrack.cloud');
+	subdomainInputWrapper.appendChild(subdomainInput);
+	subdomainInputWrapper.appendChild(subdomainSuffix);
+
+	const subdomainInputGroup = createElement('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } });
 	const saveSubdomainBtn = createElement('button', {
 		type: 'button',
 		className: 'yt-save-subdomain',
 		style: {
 			padding: '8px 16px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#2da44e',
+			backgroundColor: theme.buttonBg,
 			color: '#ffffff',
 			cursor: 'pointer',
 			whiteSpace: 'nowrap',
+			flexShrink: '0',
 		}
 	}, 'Save');
-	subdomainInputGroup.appendChild(subdomainInput);
+	subdomainInputGroup.appendChild(subdomainInputWrapper);
 	subdomainInputGroup.appendChild(saveSubdomainBtn);
 	subdomainInputDiv.appendChild(subdomainLabel);
 	subdomainInputDiv.appendChild(subdomainInputGroup);
 	const subdomainHint = createElement('small', {
-		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: '#57606a' }
-	}, 'From: mycompany.youtrack.cloud');
+		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: theme.textSecondary }
+	}, 'Enter the subdomain from your YouTrack URL');
 	subdomainInputDiv.appendChild(subdomainHint);
 	modalContent.appendChild(subdomainInputDiv);
 
 	// Subdomain Display
 	const subdomainDisplayDiv = createElement('div', {
 		className: 'yt-subdomain-display',
-		style: { marginBottom: '16px', display: isSubdomainSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px' }
+		style: { marginBottom: '16px', display: isSubdomainSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px', minHeight: '38px' }
 	});
 	const subdomainDisplayLabel = createElement('label', {
-		style: { flex: '1', fontSize: '14px', color: '#57606a' }
+		style: { flex: '1', fontSize: '14px', color: theme.textSecondary }
 	});
-	subdomainDisplayLabel.innerHTML = `Organization: <strong style="color: #24292e">${savedSubdomain || ''}</strong>.youtrack.cloud`;
+	subdomainDisplayLabel.innerHTML = `Organization: <strong style="color: ${theme.text}">${savedSubdomain || ''}</strong>.youtrack.cloud`;
 	const editSubdomainBtn = createElement('button', {
 		type: 'button',
 		className: 'yt-edit-subdomain',
 		style: {
 			padding: '4px 8px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			cursor: 'pointer',
 		}
 	}, '✏️');
@@ -262,7 +401,7 @@ function createModal(issueId) {
 	// Token Input
 	const tokenInputDiv = createElement('div', {
 		className: 'yt-token-input',
-		style: { marginBottom: '16px', display: isSubdomainSaved && !isTokenSaved ? 'block' : 'none' }
+		style: { marginBottom: '16px', display: isSubdomainSaved && !isTokenSaved ? 'block' : 'none', minHeight: '76px' }
 	});
 	const tokenLabel = createElement('label', {
 		htmlFor: 'yt-token',
@@ -273,15 +412,15 @@ function createModal(issueId) {
 		id: 'yt-token',
 		type: 'password',
 		placeholder: 'Paste token from YouTrack',
-		value: savedToken || '',
+		value: '',
 		style: {
 			flex: '1',
 			padding: '8px 12px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			fontFamily: 'monospace',
 		}
 	});
@@ -291,9 +430,9 @@ function createModal(issueId) {
 		style: {
 			padding: '8px 16px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#2da44e',
+			backgroundColor: theme.buttonBg,
 			color: '#ffffff',
 			cursor: 'pointer',
 			whiteSpace: 'nowrap',
@@ -304,7 +443,7 @@ function createModal(issueId) {
 	tokenInputDiv.appendChild(tokenLabel);
 	tokenInputDiv.appendChild(tokenInputGroup);
 	const tokenHint = createElement('small', {
-		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: '#57606a' }
+		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: theme.textSecondary }
 	}, 'Get permanent token: Profile → Authentication → New token... → Paste here');
 	tokenInputDiv.appendChild(tokenHint);
 	modalContent.appendChild(tokenInputDiv);
@@ -312,10 +451,10 @@ function createModal(issueId) {
 	// Token Display
 	const tokenDisplayDiv = createElement('div', {
 		className: 'yt-token-display',
-		style: { marginBottom: '16px', display: isTokenSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px' }
+		style: { marginBottom: '16px', display: isTokenSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px', minHeight: '38px' }
 	});
 	const tokenDisplayLabel = createElement('label', {
-		style: { flex: '1', fontSize: '14px', color: '#57606a' }
+		style: { flex: '1', fontSize: '14px', color: theme.textSecondary }
 	});
 	tokenDisplayLabel.innerHTML = 'Token: <span style="font-family: monospace">••••••••</span>';
 	const editTokenBtn = createElement('button', {
@@ -323,10 +462,10 @@ function createModal(issueId) {
 		className: 'yt-edit-token',
 		style: {
 			padding: '4px 8px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			cursor: 'pointer',
 		}
 	}, '✏️');
@@ -337,7 +476,7 @@ function createModal(issueId) {
 	// Work Item Type Select
 	const workTypeDiv = createElement('div', {
 		className: 'yt-work-type-container',
-		style: { marginBottom: '16px', display: isSubdomainSaved && isTokenSaved && !isWorkItemTypeSaved ? 'block' : 'none', opacity: isSubdomainSaved && isTokenSaved ? '1' : '0.5' }
+		style: { marginBottom: '16px', display: isSubdomainSaved && isTokenSaved && !isWorkItemTypeSaved ? 'block' : 'none', minHeight: '62px' }
 	});
 	const workTypeLabel = createElement('label', {
 		htmlFor: 'yt-work-type',
@@ -346,31 +485,31 @@ function createModal(issueId) {
 	const workTypeGroup = createElement('div', { style: { display: 'flex', gap: '8px' } });
 	const workTypeSelect = createElement('select', {
 		id: 'yt-work-type',
-		disabled: !isSubdomainSaved,
+		size: 1,
 		style: {
 			flex: '1',
+			height: '38px',
 			padding: '8px 12px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: isSubdomainSaved ? '#f6f8fa' : '#e5e7eb',
-			color: isSubdomainSaved ? '#24292e' : '#9ca3af',
-			cursor: isSubdomainSaved ? 'pointer' : 'not-allowed',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
+			cursor: 'pointer',
 		}
 	});
 	workTypeSelect.innerHTML = '<option value="">Loading...</option>';
 	const saveWorkTypeBtn = createElement('button', {
 		type: 'button',
 		className: 'yt-save-work-type',
-		disabled: !(isSubdomainSaved && isTokenSaved),
 		style: {
 			padding: '8px 16px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: 'none',
 			borderRadius: '6px',
-			backgroundColor: (isSubdomainSaved && isTokenSaved) ? '#2da44e' : '#e5e7eb',
+			backgroundColor: theme.buttonBg,
 			color: '#ffffff',
-			cursor: (isSubdomainSaved && isTokenSaved) ? 'pointer' : 'not-allowed',
+			cursor: 'pointer',
 			whiteSpace: 'nowrap',
 		}
 	}, 'Save');
@@ -383,10 +522,10 @@ function createModal(issueId) {
 	// Work Item Type Display
 	const workTypeDisplayDiv = createElement('div', {
 		className: 'yt-work-type-display',
-		style: { marginBottom: '16px', display: isWorkItemTypeSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px' }
+		style: { marginBottom: '16px', display: isWorkItemTypeSaved ? 'flex' : 'none', alignItems: 'center', gap: '8px', minHeight: '38px' }
 	});
 	const workTypeDisplayLabel = createElement('label', {
-		style: { flex: '1', fontSize: '14px', color: '#57606a' }
+		style: { flex: '1', fontSize: '14px', color: theme.textSecondary }
 	});
 	const savedTypeObj = savedWorkItemType ? JSON.parse(savedWorkItemType) : null;
 	workTypeDisplayLabel.innerHTML = `Work Item Type: <span class="yt-work-type-value">${savedTypeObj ? savedTypeObj.name : ''}</span>`;
@@ -395,10 +534,10 @@ function createModal(issueId) {
 		className: 'yt-edit-work-type',
 		style: {
 			padding: '4px 8px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			cursor: 'pointer',
 		}
 	}, '✏️');
@@ -409,7 +548,7 @@ function createModal(issueId) {
 	// Subtask Select
 	const subtaskDiv = createElement('div', {
 		className: 'yt-subtask-select',
-		style: { marginBottom: '16px', display: 'none' }
+		style: { display: 'none' }
 	});
 	const subtaskLabel = createElement('label', {
 		htmlFor: 'yt-subtask',
@@ -417,14 +556,16 @@ function createModal(issueId) {
 	}, 'Select Subtask');
 	const subtaskSelect = createElement('select', {
 		id: 'yt-subtask',
+		size: 1,
 		style: {
 			width: '100%',
+			height: '38px',
 			padding: '8px 12px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			cursor: 'pointer',
 		}
 	});
@@ -432,14 +573,17 @@ function createModal(issueId) {
 	subtaskDiv.appendChild(subtaskLabel);
 	subtaskDiv.appendChild(subtaskSelect);
 	const subtaskHint = createElement('small', {
-		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: '#57606a' }
+		style: { display: 'block', marginTop: '4px', fontSize: '12px', color: theme.textSecondary }
 	}, 'This story requires time to be logged on a subtask');
 	subtaskDiv.appendChild(subtaskHint);
-	modalContent.appendChild(subtaskDiv);
 
-	// Time Input
+	// Time Input and Subtask container
+	const timeAndSubtaskContainer = createElement('div', {
+		style: { marginBottom: '16px' }
+	});
+
 	const timeDiv = createElement('div', {
-		style: { marginBottom: '16px', display: isSubdomainSaved && isWorkItemTypeSaved ? 'block' : 'none' }
+		style: { display: isSubdomainSaved && isWorkItemTypeSaved ? 'block' : 'none' }
 	});
 	const timeLabel = createElement('label', {
 		htmlFor: 'yt-time',
@@ -454,20 +598,23 @@ function createModal(issueId) {
 			width: '100%',
 			padding: '8px 12px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 		}
 	});
 	timeDiv.appendChild(timeLabel);
 	timeDiv.appendChild(timeInput);
-	modalContent.appendChild(timeDiv);
+
+	timeAndSubtaskContainer.appendChild(subtaskDiv);
+	timeAndSubtaskContainer.appendChild(timeDiv);
+	modalContent.appendChild(timeAndSubtaskContainer);
 
 	// Error Display
 	const errorDiv = createElement('div', {
 		className: 'yt-error',
-		style: { display: 'none', marginBottom: '16px', padding: '12px', backgroundColor: '#ffeef0', borderRadius: '6px', color: '#d1242f', fontSize: '14px' }
+		style: { display: 'none', marginBottom: '16px', padding: '12px', backgroundColor: theme.errorBg, borderRadius: '6px', color: theme.errorText, fontSize: '14px', minHeight: '44px' }
 	});
 	modalContent.appendChild(errorDiv);
 
@@ -481,10 +628,10 @@ function createModal(issueId) {
 		style: {
 			padding: '8px 16px',
 			fontSize: '14px',
-			border: '1px solid #d1d5da',
+			border: `1px solid ${theme.border}`,
 			borderRadius: '6px',
-			backgroundColor: '#f6f8fa',
-			color: '#24292e',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
 			cursor: 'pointer',
 		}
 	}, 'Cancel');
@@ -496,7 +643,7 @@ function createModal(issueId) {
 			fontSize: '14px',
 			border: 'none',
 			borderRadius: '6px',
-			backgroundColor: '#2da44e',
+			backgroundColor: theme.buttonBg,
 			color: '#ffffff',
 			cursor: 'pointer',
 		}
@@ -622,10 +769,13 @@ function createModal(issueId) {
 
 		subdomainInputDiv.style.display = 'none';
 		subdomainDisplayDiv.style.display = 'flex';
-		subdomainDisplayLabel.innerHTML = `Organization: <strong style="color: #24292e">${subdomain}</strong>.youtrack.cloud`;
+		subdomainDisplayLabel.innerHTML = `Organization: <strong style="color: ${theme.text}">${subdomain}</strong>.youtrack.cloud`;
 
-		tokenInputDiv.style.display = 'block';
-		tokenInput.focus();
+		// Only show token input if not already saved
+		if (!isTokenSaved) {
+			tokenInputDiv.style.display = 'block';
+			tokenInput.focus();
+		}
 	});
 
 	subdomainInput.addEventListener('keydown', event => {
@@ -666,18 +816,21 @@ function createModal(issueId) {
 
 			tokenInputDiv.style.display = 'none';
 			tokenDisplayDiv.style.display = 'flex';
-			workTypeDiv.style.display = 'block';
 
-			workTypeSelect.disabled = false;
-			workTypeSelect.style.backgroundColor = '#f6f8fa';
-			workTypeSelect.style.color = '#24292e';
+			// Only show work type selector if not already saved
+			if (!isWorkItemTypeSaved) {
+				workTypeDiv.style.display = 'block';
+			}
+
+			workTypeSelect.style.backgroundColor = theme.bgSecondary;
+			workTypeSelect.style.color = theme.text;
 			workTypeSelect.style.cursor = 'pointer';
 
-			saveWorkTypeBtn.disabled = false;
-			saveWorkTypeBtn.style.backgroundColor = '#2da44e';
+			saveWorkTypeBtn.style.backgroundColor = theme.buttonBg;
 			saveWorkTypeBtn.style.cursor = 'pointer';
 		} catch (error) {
 			showError(error.message || 'Failed to authenticate with YouTrack');
+		} finally {
 			saveTokenBtn.disabled = false;
 			saveTokenBtn.textContent = 'Save';
 		}
@@ -732,10 +885,19 @@ function createModal(issueId) {
 	});
 
 	cancelButton.addEventListener('click', closeModal);
-	overlay.addEventListener('click', event => {
+
+	// Only close if both mousedown and mouseup happen on overlay
+	let mouseDownOnOverlay = false;
+	overlay.addEventListener('mousedown', event => {
 		if (event.target === overlay) {
+			mouseDownOnOverlay = true;
+		}
+	});
+	overlay.addEventListener('mouseup', event => {
+		if (event.target === overlay && mouseDownOnOverlay) {
 			closeModal();
 		}
+		mouseDownOnOverlay = false;
 	});
 
 	submitButton.addEventListener('click', async () => {
@@ -801,7 +963,7 @@ function createModal(issueId) {
 					position: 'fixed',
 					top: '16px',
 					right: '16px',
-					backgroundColor: '#2da44e',
+					backgroundColor: theme.buttonBg,
 					color: '#ffffff',
 					padding: '12px 16px',
 					borderRadius: '6px',
@@ -878,24 +1040,87 @@ function addTimeButton() {
 	header.prepend(btn);
 }
 
-// Initialize
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', addTimeButton);
-} else {
+/**
+ * Checks if current page is an individual PR page
+ * @returns {boolean}
+ */
+function isPRPage() {
+	return PR_PAGE_PATTERN.test(location.href);
+}
+
+/**
+ * Try to add button - checks all conditions before adding
+ */
+function tryAddButton() {
+	if (!isPRPage()) {
+		return;
+	}
+
+	const issueId = extractYouTrackId();
+	if (!issueId) {
+		return; // Title not loaded yet or no YouTrack ID
+	}
+
+	const header = document.querySelector('.gh-header-actions');
+	if (!header) {
+		return; // Header not loaded yet
+	}
+
+	const buttonExists = header.querySelector('.yt-time-button') !== null;
+	if (buttonExists) {
+		return;
+	}
+
 	addTimeButton();
 }
 
-// Watch for navigation changes and header appearance (GitHub uses PJAX)
+// Initialize
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', tryAddButton);
+} else {
+	tryAddButton();
+}
+
+// Listen for GitHub's Turbo navigation events
+document.addEventListener('turbo:load', tryAddButton);
+document.addEventListener('turbo:render', tryAddButton);
+
+// Also listen for older pjax events (fallback)
+document.addEventListener('pjax:end', tryAddButton);
+
+// Watch for navigation changes and DOM updates with throttling
 let lastUrl = location.href;
-new MutationObserver(() => {
-	const url = location.href;
-	if (url !== lastUrl) {
-		lastUrl = url;
+let throttleTimeout = null;
+
+const observer = new MutationObserver(() => {
+	const currentUrl = location.href;
+	const urlChanged = currentUrl !== lastUrl;
+
+	if (urlChanged) {
+		lastUrl = currentUrl;
+		tryAddButton();
+		return;
 	}
 
-	// Try to add button whenever DOM changes
-	const header = document.querySelector('.gh-header-actions');
-	if (header && !header.querySelector('.yt-time-button')) {
-		addTimeButton();
+	// Throttle DOM change checks to avoid excessive calls
+	if (throttleTimeout === null) {
+		throttleTimeout = setTimeout(() => {
+			tryAddButton();
+			throttleTimeout = null;
+		}, THROTTLE_DELAY_MS);
 	}
-}).observe(document, { subtree: true, childList: true });
+});
+
+observer.observe(document, { subtree: true, childList: true });
+
+// Poll periodically for initial page load
+let pollCount = 0;
+const pollInterval = setInterval(() => {
+	tryAddButton();
+	pollCount++;
+
+	const maxAttemptsReached = pollCount >= POLL_MAX_ATTEMPTS;
+	if (maxAttemptsReached) {
+		clearInterval(pollInterval);
+	}
+}, POLL_INTERVAL_MS);

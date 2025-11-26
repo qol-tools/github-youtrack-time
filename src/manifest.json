@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "GitHub YouTrack Time Tracker",
-	"version": "1.0.3",
+	"version": "1.0.5",
 	"description": "Add time tracking to YouTrack issues directly from GitHub PRs",
 	"icons": {
 		"48": "icon-48.png",
@@ -19,9 +19,12 @@
 	],
 	"content_scripts": [
 		{
-			"matches": ["https://github.com/*/*/pull/*"],
+			"matches": [
+				"https://github.com/*"
+			],
 			"js": ["content.js"],
-			"css": ["content.css"]
+			"css": ["content.css"],
+			"run_at": "document_end"
 		}
 	],
 	"background": {
