@@ -44,4 +44,34 @@ files.forEach(file => {
 	}
 });
 
-console.log('\n✓ Build complete! Extension files are in dist/');
+// Create Chrome version (MV3) in dist-chrome
+const distChromeDir = 'dist-chrome';
+if (fs.existsSync(distChromeDir)) {
+	fs.rmSync(distChromeDir, { recursive: true });
+}
+fs.mkdirSync(distChromeDir, { recursive: true });
+
+// Copy all files to Chrome dist
+files.forEach(file => {
+	const srcPath = path.join(srcDir, file);
+	if (fs.existsSync(srcPath) && file !== 'manifest.json') {
+		fs.copyFileSync(srcPath, path.join(distChromeDir, file));
+	}
+});
+
+['icon-48.png', 'icon-96.png'].forEach(file => {
+	if (fs.existsSync(file)) {
+		fs.copyFileSync(file, path.join(distChromeDir, file));
+	}
+});
+
+// Copy Chrome manifest
+if (fs.existsSync(path.join(srcDir, 'manifest-chrome.json'))) {
+	fs.copyFileSync(
+		path.join(srcDir, 'manifest-chrome.json'),
+		path.join(distChromeDir, 'manifest.json')
+	);
+	console.log('✓ Created Chrome version in dist-chrome/');
+}
+
+console.log('\n✓ Build complete! Firefox: dist/ | Chrome: dist-chrome/');
