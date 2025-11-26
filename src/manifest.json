@@ -7,6 +7,11 @@
 		"48": "icon-48.png",
 		"96": "icon-96.png"
 	},
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "{bb1aa941-339c-47e0-854f-0a62a6de89e8}"
+		}
+	},
 	"permissions": [
 		"storage",
 		"https://github.com/*",
