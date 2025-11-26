@@ -891,6 +891,14 @@ new MutationObserver(() => {
 	const url = location.href;
 	if (url !== lastUrl) {
 		lastUrl = url;
-		setTimeout(addTimeButton, 500); // Give GitHub time to render
+		// Wait for the header to appear
+		const checkHeader = setInterval(() => {
+			if (document.querySelector('.gh-header-actions')) {
+				clearInterval(checkHeader);
+				addTimeButton();
+			}
+		}, 100);
+		// Timeout after 3 seconds
+		setTimeout(() => clearInterval(checkHeader), 3000);
 	}
 }).observe(document, { subtree: true, childList: true });
