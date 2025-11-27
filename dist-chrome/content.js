@@ -74,6 +74,33 @@ async function fetchWorkItemTypes(subdomain, token) {
 
 /**
  * @param {string} subdomain - YouTrack subdomain
+ * @param {string} issueId - Issue ID to fetch details for
+ * @param {string} token - YouTrack API token
+ * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
+ */
+async function fetchIssueDetails(subdomain, issueId, token) {
+	if (!subdomain || !issueId || !token) {
+		return { ok: false, error: 'Missing required parameters' };
+	}
+
+	try {
+		return await chrome.runtime.sendMessage({
+			action: 'ytbridge.request',
+			subdomain,
+			url: `https://${subdomain}.youtrack.cloud/api/issues/${issueId}?fields=idReadable,summary,customFields(name,value(name))`,
+			method: 'GET',
+			headers: {
+				'Authorization': `Bearer ${token}`,
+				'Accept': 'application/json',
+			},
+		});
+	} catch (error) {
+		return { ok: false, error: error.message || 'Request failed' };
+	}
+}
+
+/**
+ * @param {string} subdomain - YouTrack subdomain
  * @param {string} issueId - Issue ID to fetch links for
  * @param {string} token - YouTrack API token
  * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
@@ -271,6 +298,8 @@ function createModal(issueId) {
 	let isTokenSaved = !!savedToken;
 	let isWorkItemTypeSaved = !!savedWorkItemType;
 	let hasSubtasks = false;
+	let isStoryType = false;
+	let issueType = null;
 
 	const theme = getTheme();
 
@@ -699,6 +728,31 @@ function createModal(issueId) {
 		}
 	};
 
+	const checkIssueType = async (subdomain, token) => {
+		try {
+			const res = await fetchIssueDetails(subdomain, issueId, token);
+
+			if (!res.ok) {
+				throw new Error(res.error || 'Unknown error');
+			}
+
+			if (!res.data || !res.data.customFields) {
+				return;
+			}
+
+			const typeField = res.data.customFields.find(field =>
+				field.name && field.name.toLowerCase() === 'type'
+			);
+
+			if (typeField && typeField.value && typeField.value.name) {
+				issueType = typeField.value.name;
+				isStoryType = issueType.toLowerCase().includes('story');
+			}
+		} catch (error) {
+			isStoryType = false;
+		}
+	};
+
 	const loadSubtasks = async (subdomain, token) => {
 		try {
 			const res = await fetchIssueLinks(subdomain, issueId, token);
@@ -711,7 +765,6 @@ function createModal(issueId) {
 				return;
 			}
 
-			// Filter for subtasks
 			const subtaskLinks = res.data.filter(link =>
 				link.linkType.targetToSource.toLowerCase().includes('subtask of')
 			);
@@ -719,10 +772,16 @@ function createModal(issueId) {
 			if (subtaskLinks.length === 0) {
 				hasSubtasks = false;
 				subtaskDiv.style.display = 'none';
+
+				if (isStoryType) {
+					showError('This is a Story. Time can only be logged on subtasks, but no subtasks were found.');
+					submitButton.disabled = true;
+					submitButton.style.backgroundColor = theme.buttonDisabled;
+					submitButton.style.cursor = 'not-allowed';
+				}
 				return;
 			}
 
-			// Extract all subtasks
 			subtasks = [];
 			subtaskLinks.forEach(link => {
 				subtasks.push(...link.trimmedIssues);
@@ -731,20 +790,28 @@ function createModal(issueId) {
 			if (subtasks.length === 0) {
 				hasSubtasks = false;
 				subtaskDiv.style.display = 'none';
+
+				if (isStoryType) {
+					showError('This is a Story. Time can only be logged on subtasks, but no subtasks were found.');
+					submitButton.disabled = true;
+					submitButton.style.backgroundColor = theme.buttonDisabled;
+					submitButton.style.cursor = 'not-allowed';
+				}
 				return;
 			}
 
 			hasSubtasks = true;
-			subtaskDiv.style.display = 'block';
 
-			// Populate select
+			if (isStoryType) {
+				subtaskDiv.style.display = 'block';
+			}
+
 			subtaskSelect.innerHTML = '';
 			subtasks.forEach(subtask => {
 				const option = createElement('option', { value: subtask.idReadable }, `${subtask.idReadable} - ${subtask.summary}`);
 				subtaskSelect.appendChild(option);
 			});
 		} catch (error) {
-			// Subtasks are optional
 			hasSubtasks = false;
 			subtaskDiv.style.display = 'none';
 		}
@@ -752,7 +819,9 @@ function createModal(issueId) {
 
 	if (isSubdomainSaved && isTokenSaved) {
 		loadWorkItemTypes(savedSubdomain, savedToken);
-		loadSubtasks(savedSubdomain, savedToken);
+		checkIssueType(savedSubdomain, savedToken).then(() => {
+			loadSubtasks(savedSubdomain, savedToken);
+		});
 	}
 
 	// Event listeners
@@ -813,6 +882,9 @@ function createModal(issueId) {
 
 			localStorage.setItem(STORAGE_KEY_TOKEN, token);
 			isTokenSaved = true;
+
+			await checkIssueType(subdomain, token);
+			await loadSubtasks(subdomain, token);
 
 			tokenInputDiv.style.display = 'none';
 			tokenDisplayDiv.style.display = 'flex';
@@ -926,14 +998,22 @@ function createModal(issueId) {
 
 			const workItemTypeId = JSON.parse(workItemType).id;
 
-			// Determine target issue
 			let targetIssueId = issueId;
-			if (hasSubtasks) {
+
+			if (isStoryType) {
+				if (!hasSubtasks) {
+					throw new Error('This is a Story. Time can only be logged on subtasks.');
+				}
 				const selectedSubtask = subtaskSelect.value;
 				if (!selectedSubtask) {
 					throw new Error('Please select a subtask');
 				}
 				targetIssueId = selectedSubtask;
+			} else if (hasSubtasks) {
+				const selectedSubtask = subtaskSelect.value;
+				if (selectedSubtask) {
+					targetIssueId = selectedSubtask;
+				}
 			}
 
 			submitButton.disabled = true;
