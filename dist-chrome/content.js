@@ -760,10 +760,12 @@ function createModal(issueId) {
 			const res = await fetchIssueDetails(subdomain, issueId, token);
 
 			if (!res.ok) {
-				throw new Error(res.error || 'Unknown error');
+				isStoryType = false;
+				return;
 			}
 
 			if (!res.data || !res.data.customFields) {
+				isStoryType = false;
 				return;
 			}
 
@@ -774,6 +776,8 @@ function createModal(issueId) {
 			if (typeField && typeField.value && typeField.value.name) {
 				issueType = typeField.value.name;
 				isStoryType = issueType.toLowerCase().includes('story');
+			} else {
+				isStoryType = false;
 			}
 		} catch (error) {
 			isStoryType = false;
@@ -793,6 +797,7 @@ function createModal(issueId) {
 			}
 
 			const subtaskLinks = res.data.filter(link =>
+				link.direction === 'OUTWARD' &&
 				link.linkType.targetToSource.toLowerCase().includes('subtask of')
 			);
 
