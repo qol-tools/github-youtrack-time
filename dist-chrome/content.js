@@ -612,7 +612,7 @@ function createModal(issueId) {
 	});
 
 	const timeDiv = createElement('div', {
-		style: { display: isSubdomainSaved && isWorkItemTypeSaved ? 'block' : 'none' }
+		style: { display: isSubdomainSaved && isWorkItemTypeSaved ? 'block' : 'none', marginBottom: '16px' }
 	});
 	const timeLabel = createElement('label', {
 		htmlFor: 'yt-time',
@@ -636,8 +636,35 @@ function createModal(issueId) {
 	timeDiv.appendChild(timeLabel);
 	timeDiv.appendChild(timeInput);
 
+	const commentDiv = createElement('div', {
+		style: { display: isSubdomainSaved && isWorkItemTypeSaved ? 'block' : 'none' }
+	});
+	const commentLabel = createElement('label', {
+		htmlFor: 'yt-comment',
+		style: { display: 'block', marginBottom: '4px', fontSize: '14px', fontWeight: '500' }
+	}, 'Comment (optional)');
+	const commentInput = createElement('textarea', {
+		id: 'yt-comment',
+		placeholder: 'Add a description of the work...',
+		style: {
+			width: '100%',
+			padding: '8px 12px',
+			fontSize: '14px',
+			border: `1px solid ${theme.border}`,
+			borderRadius: '6px',
+			backgroundColor: theme.bgSecondary,
+			color: theme.text,
+			minHeight: '60px',
+			resize: 'vertical',
+			fontFamily: 'inherit',
+		}
+	});
+	commentDiv.appendChild(commentLabel);
+	commentDiv.appendChild(commentInput);
+
 	timeAndSubtaskContainer.appendChild(subtaskDiv);
 	timeAndSubtaskContainer.appendChild(timeDiv);
+	timeAndSubtaskContainer.appendChild(commentDiv);
 	modalContent.appendChild(timeAndSubtaskContainer);
 
 	// Error Display
@@ -940,6 +967,7 @@ function createModal(issueId) {
 			workTypeDisplayDiv.querySelector('.yt-work-type-value').textContent = selectedType.name;
 
 			timeDiv.style.display = 'block';
+			commentDiv.style.display = 'block';
 			timeInput.focus();
 		}
 	});
@@ -1031,6 +1059,11 @@ function createModal(issueId) {
 				},
 				$type: 'IssueWorkItem',
 			};
+
+			const commentText = commentInput.value.trim();
+			if (commentText) {
+				request.text = commentText;
+			}
 
 			const res = await addSpentTime(subdomain, targetIssueId, request, token);
 			if (!res.ok) throw new Error(res.error);

@@ -1,7 +1,7 @@
 {
 	"manifest_version": 2,
 	"name": "GitHub YouTrack Time Tracker",
-	"version": "1.0.6",
+	"version": "1.1.0",
 	"description": "Add time tracking to YouTrack issues directly from GitHub PRs",
 	"icons": {
 		"48": "icon-48.png",
