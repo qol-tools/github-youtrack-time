@@ -17,20 +17,29 @@
 	],
 	"host_permissions": [
 		"https://github.com/*",
-		"https://*.youtrack.cloud/*"
+		"https://*.youtrack.cloud/*",
+		"http://localhost:42710/*"
 	],
 	"content_scripts": [
 		{
 			"matches": [
 				"https://github.com/*"
 			],
-			"js": ["content.js"],
+			"js": ["content.js", "ide-opener.js"],
 			"css": ["content.css"],
 			"run_at": "document_end"
 		}
 	],
 	"background": {
 		"service_worker": "background-youtrack.js"
+	},
+	"action": {
+		"default_popup": "popup.html",
+		"default_icon": {
+			"48": "icon-48.png",
+			"96": "icon-96.png"
+		},
+		"default_title": "YouTrack Time Tracker"
 	},
 	"web_accessible_resources": [
 		{

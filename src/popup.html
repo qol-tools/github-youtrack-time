@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<style>
+		body {
+			width: 220px;
+			padding: 12px;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+			font-size: 14px;
+			margin: 0;
+		}
+		h3 {
+			margin: 0 0 12px 0;
+			font-size: 14px;
+			font-weight: 600;
+		}
+		button {
+			width: 100%;
+			padding: 8px 12px;
+			margin-bottom: 8px;
+			border: 1px solid #d1d5da;
+			border-radius: 6px;
+			background: #f6f8fa;
+			cursor: pointer;
+			font-size: 13px;
+			text-align: left;
+		}
+		button:hover {
+			background: #e9ecef;
+		}
+		button:last-child {
+			margin-bottom: 0;
+		}
+		.disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+		.status {
+			font-size: 12px;
+			color: #57606a;
+			margin-top: 8px;
+			padding-top: 8px;
+			border-top: 1px solid #d1d5da;
+		}
+	</style>
+</head>
+<body>
+	<h3>YouTrack Time Tracker</h3>
+	<button id="add-button">Add Time Button Here</button>
+	<button id="reset-locations">Reset All Locations</button>
+	<div id="status" class="status"></div>
+	<script src="popup.js"></script>
+</body>
+</html>

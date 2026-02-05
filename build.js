@@ -20,6 +20,9 @@ const files = [
 	'background.html',
 	'content.js',
 	'content.css',
+	'ide-opener.js',
+	'popup.html',
+	'popup.js',
 ];
 
 // Copy files from src/

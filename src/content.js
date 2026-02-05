@@ -4,6 +4,7 @@
 const STORAGE_KEY_SUBDOMAIN = 'yt-subdomain';
 const STORAGE_KEY_WORK_ITEM_TYPE = 'yt-work-item-type';
 const STORAGE_KEY_TOKEN = 'yt-token';
+const STORAGE_KEY_BUTTON_SELECTOR = 'yt-button-selector';
 
 // UI Constants
 const COLORS = {
@@ -190,6 +191,356 @@ function extractYouTrackId() {
 
 	const match = titleEl.textContent.match(YOUTRACK_ID_PATTERN);
 	return match?.[0] ?? null;
+}
+
+/**
+ * Gets all saved button container selectors from localStorage
+ * @returns {string[]}
+ */
+function getSavedButtonSelectors() {
+	const stored = localStorage.getItem(STORAGE_KEY_BUTTON_SELECTOR);
+	if (!stored) return [];
+	try {
+		const parsed = JSON.parse(stored);
+		return Array.isArray(parsed) ? parsed : [parsed];
+	} catch {
+		return stored ? [stored] : [];
+	}
+}
+
+/**
+ * Adds a button container selector to localStorage
+ * @param {string} selector
+ */
+function addButtonSelector(selector) {
+	const selectors = getSavedButtonSelectors();
+	if (!selectors.includes(selector)) {
+		selectors.push(selector);
+		localStorage.setItem(STORAGE_KEY_BUTTON_SELECTOR, JSON.stringify(selectors));
+	}
+}
+
+/**
+ * Clears all saved button selectors
+ */
+function clearButtonSelectors() {
+	localStorage.removeItem(STORAGE_KEY_BUTTON_SELECTOR);
+}
+
+/**
+ * Generates a generic CSS selector for an element that works across pages
+ * @param {Element} el
+ * @returns {string}
+ */
+function generateSelector(el) {
+	const candidates = [];
+
+	const dataComponent = el.getAttribute('data-component');
+	if (dataComponent) {
+		candidates.push(`[data-component="${dataComponent}"]`);
+	}
+
+	const stableClasses = Array.from(el.classList)
+		.filter(c => {
+			if (c.match(/^[a-zA-Z0-9_-]{20,}$/)) return false;
+			if (c.match(/^[a-f0-9]{6,}$/i)) return false;
+			if (c.includes('__')) return false;
+			return true;
+		});
+
+	if (stableClasses.length > 0) {
+		candidates.push('.' + stableClasses.slice(0, 2).join('.'));
+	}
+
+	const ariaLabel = el.getAttribute('aria-label');
+	if (ariaLabel && ariaLabel.length < 50) {
+		candidates.push(`[aria-label="${ariaLabel}"]`);
+	}
+
+	for (const candidate of candidates) {
+		const matches = document.querySelectorAll(candidate);
+		if (matches.length === 1) {
+			return candidate;
+		}
+	}
+
+	let current = el;
+	const parts = [];
+
+	while (current && current !== document.body && parts.length < 4) {
+		const dc = current.getAttribute('data-component');
+		if (dc) {
+			parts.unshift(`[data-component="${dc}"]`);
+			break;
+		}
+
+		const stable = Array.from(current.classList)
+			.filter(c => !c.match(/^[a-zA-Z0-9_-]{15,}$/) && !c.includes('__'))
+			.slice(0, 2);
+
+		if (stable.length > 0) {
+			parts.unshift('.' + stable.join('.'));
+		} else {
+			parts.unshift(current.tagName.toLowerCase());
+		}
+
+		current = current.parentElement;
+	}
+
+	return parts.join(' ');
+}
+
+let pickerActive = false;
+let pickerHighlight = null;
+
+/**
+ * Enters picker mode to let user select button placement
+ */
+function enterPickerMode() {
+	if (pickerActive) return;
+	pickerActive = true;
+
+	pickerHighlight = document.createElement('div');
+	pickerHighlight.style.cssText = `
+		position: fixed;
+		pointer-events: none;
+		border: 3px solid #2da44e;
+		background: rgba(45, 164, 78, 0.1);
+		z-index: 99999;
+		transition: all 0.1s ease;
+	`;
+	document.body.appendChild(pickerHighlight);
+
+	const instructions = document.createElement('div');
+	instructions.id = 'yt-picker-instructions';
+	instructions.style.cssText = `
+		position: fixed;
+		top: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: #2da44e;
+		color: white;
+		padding: 12px 20px;
+		border-radius: 8px;
+		z-index: 100000;
+		font-size: 14px;
+		box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+	`;
+	instructions.textContent = 'Click where you want the "Add Time" button to appear. Press Escape to cancel.';
+	document.body.appendChild(instructions);
+
+	document.addEventListener('mousemove', pickerMouseMove);
+	document.addEventListener('click', pickerClick, true);
+	document.addEventListener('keydown', pickerKeyDown);
+}
+
+function pickerMouseMove(e) {
+	if (!pickerActive || !pickerHighlight) return;
+
+	const target = e.target;
+	if (target === pickerHighlight || target.id === 'yt-picker-instructions') return;
+
+	const rect = target.getBoundingClientRect();
+	pickerHighlight.style.top = rect.top + 'px';
+	pickerHighlight.style.left = rect.left + 'px';
+	pickerHighlight.style.width = rect.width + 'px';
+	pickerHighlight.style.height = rect.height + 'px';
+}
+
+function pickerClick(e) {
+	if (!pickerActive) return;
+
+	const target = e.target;
+	if (target.id === 'yt-picker-instructions') return;
+
+	e.preventDefault();
+	e.stopPropagation();
+
+	const selector = generateSelector(target);
+	addButtonSelector(selector);
+
+	exitPickerMode();
+	addButtonsToPage();
+	showPickerNotification(`Button location saved!`);
+}
+
+function pickerKeyDown(e) {
+	if (e.key === 'Escape') {
+		exitPickerMode();
+	}
+}
+
+function exitPickerMode() {
+	pickerActive = false;
+
+	if (pickerHighlight) {
+		pickerHighlight.remove();
+		pickerHighlight = null;
+	}
+
+	const instructions = document.getElementById('yt-picker-instructions');
+	if (instructions) instructions.remove();
+
+	document.removeEventListener('mousemove', pickerMouseMove);
+	document.removeEventListener('click', pickerClick, true);
+	document.removeEventListener('keydown', pickerKeyDown);
+}
+
+function showPickerNotification(message) {
+	const notification = document.createElement('div');
+	notification.style.cssText = `
+		position: fixed;
+		top: 20px;
+		right: 20px;
+		padding: 12px 16px;
+		background-color: #2da44e;
+		color: white;
+		border-radius: 6px;
+		z-index: 10001;
+		font-size: 14px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	`;
+	notification.textContent = message;
+	document.body.appendChild(notification);
+	setTimeout(() => notification.remove(), 3000);
+}
+
+let activeContextMenu = null;
+let pendingMoveButton = null;
+
+function showButtonContextMenu(e, button) {
+	e.preventDefault();
+	closeContextMenu();
+
+	const menu = document.createElement('div');
+	menu.className = 'yt-context-menu';
+	menu.style.cssText = `
+		position: fixed;
+		top: ${e.clientY}px;
+		left: ${e.clientX}px;
+		background: #ffffff;
+		border: 1px solid #d1d5da;
+		border-radius: 6px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 100000;
+		min-width: 160px;
+		padding: 4px 0;
+		font-size: 14px;
+	`;
+
+	const items = [
+		{ label: 'Move button', action: () => startMoveButton(button) },
+		{ label: 'Remove button', action: () => removeButton(button) },
+		{ label: 'Add new button', action: () => enterPickerMode() },
+	];
+
+	items.forEach(item => {
+		const menuItem = document.createElement('div');
+		menuItem.textContent = item.label;
+		menuItem.style.cssText = `
+			padding: 8px 12px;
+			cursor: pointer;
+			color: #24292e;
+		`;
+		menuItem.addEventListener('mouseenter', () => {
+			menuItem.style.background = '#f6f8fa';
+		});
+		menuItem.addEventListener('mouseleave', () => {
+			menuItem.style.background = 'transparent';
+		});
+		menuItem.addEventListener('click', () => {
+			closeContextMenu();
+			item.action();
+		});
+		menu.appendChild(menuItem);
+	});
+
+	document.body.appendChild(menu);
+	activeContextMenu = menu;
+
+	setTimeout(() => {
+		document.addEventListener('click', closeContextMenu, { once: true });
+	}, 0);
+}
+
+function closeContextMenu() {
+	if (activeContextMenu) {
+		activeContextMenu.remove();
+		activeContextMenu = null;
+	}
+}
+
+function startMoveButton(button) {
+	const container = button.parentElement;
+	const selector = generateSelector(container);
+
+	pendingMoveButton = selector;
+	button.remove();
+
+	removeButtonSelector(selector);
+	enterPickerMode();
+}
+
+function removeButton(button) {
+	const container = button.parentElement;
+	const selector = generateSelector(container);
+	removeButtonSelector(selector);
+	button.remove();
+	showPickerNotification('Button removed');
+}
+
+function removeButtonSelector(selectorToRemove) {
+	const selectors = getSavedButtonSelectors();
+	const filtered = selectors.filter(s => s !== selectorToRemove);
+	if (filtered.length > 0) {
+		localStorage.setItem(STORAGE_KEY_BUTTON_SELECTOR, JSON.stringify(filtered));
+	} else {
+		localStorage.removeItem(STORAGE_KEY_BUTTON_SELECTOR);
+	}
+}
+
+/**
+ * Gets all button containers (saved + defaults)
+ * @returns {Element[]}
+ */
+function getButtonContainers() {
+	const containers = [];
+	const seen = new Set();
+
+	const savedSelectors = getSavedButtonSelectors();
+	for (const selector of savedSelectors) {
+		const el = document.querySelector(selector);
+		if (el && !seen.has(el)) {
+			seen.add(el);
+			containers.push(el);
+		}
+	}
+
+	if (containers.length === 0) {
+		const defaultEl = document.querySelector('[data-component="PH_Actions"]') ||
+			document.querySelector('.gh-header-actions') ||
+			document.querySelector('.gh-header-meta');
+		if (defaultEl) {
+			containers.push(defaultEl);
+		}
+	}
+
+	return containers;
+}
+
+/**
+ * Adds buttons to all configured containers
+ */
+function addButtonsToPage() {
+	const issueId = extractYouTrackId();
+	if (!issueId) return;
+
+	const containers = getButtonContainers();
+	for (const container of containers) {
+		if (!container.querySelector('.yt-time-button')) {
+			addTimeButtonToContainer(container, issueId);
+		}
+	}
 }
 
 /**
@@ -1115,27 +1466,15 @@ function createModal(issueId) {
 	});
 }
 
-function addTimeButton() {
-	const issueId = extractYouTrackId();
-	if (!issueId) {
-		return;
-	}
-
-	// Try new GitHub UI first (2024+), then fall back to old selector
-	const header = document.querySelector('[data-component="PH_Actions"]') ||
-		document.querySelector('.gh-header-actions');
-	if (!header) {
-		return;
-	}
-
-	if (header.querySelector('.yt-time-button')) {
+function addTimeButtonToContainer(container, issueId) {
+	if (container.querySelector('.yt-time-button')) {
 		return;
 	}
 
 	const btn = createElement('button', {
 		type: 'button',
 		className: 'yt-time-button btn btn-sm d-none d-md-block',
-		title: `Add time to ${issueId}`,
+		title: `Add time to ${issueId} (right-click for options)`,
 		style: {
 			marginRight: '8px',
 		}
@@ -1159,7 +1498,11 @@ function addTimeButton() {
 		createModal(issueId);
 	});
 
-	header.prepend(btn);
+	btn.addEventListener('contextmenu', (e) => {
+		showButtonContextMenu(e, btn);
+	});
+
+	container.prepend(btn);
 }
 
 /**
@@ -1171,7 +1514,7 @@ function isPRPage() {
 }
 
 /**
- * Try to add button - checks all conditions before adding
+ * Try to add buttons - checks all conditions before adding
  */
 function tryAddButton() {
 	if (!isPRPage()) {
@@ -1183,19 +1526,7 @@ function tryAddButton() {
 		return; // Title not loaded yet or no YouTrack ID
 	}
 
-	// Try new GitHub UI first (2024+), then fall back to old selector
-	const header = document.querySelector('[data-component="PH_Actions"]') ||
-		document.querySelector('.gh-header-actions');
-	if (!header) {
-		return; // Header not loaded yet
-	}
-
-	const buttonExists = header.querySelector('.yt-time-button') !== null;
-	if (buttonExists) {
-		return;
-	}
-
-	addTimeButton();
+	addButtonsToPage();
 }
 
 // Initialize
@@ -1248,3 +1579,25 @@ const pollInterval = setInterval(() => {
 		clearInterval(pollInterval);
 	}
 }, POLL_INTERVAL_MS);
+
+// Listen for messages from popup
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message.action === 'enterPickerMode') {
+		if (isPRPage()) {
+			enterPickerMode();
+			sendResponse({ ok: true });
+		} else {
+			sendResponse({ ok: false, error: 'Not on a PR page' });
+		}
+	}
+
+	if (message.action === 'resetButtonLocations') {
+		clearButtonSelectors();
+		document.querySelectorAll('.yt-time-button').forEach(btn => btn.remove());
+		tryAddButton();
+		sendResponse({ ok: true });
+	}
+
+	return true;
+});

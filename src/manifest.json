@@ -30,6 +30,14 @@
 	"background": {
 		"page": "background.html"
 	},
+	"browser_action": {
+		"default_popup": "popup.html",
+		"default_icon": {
+			"48": "icon-48.png",
+			"96": "icon-96.png"
+		},
+		"default_title": "YouTrack Time Tracker"
+	},
 	"web_accessible_resources": [
 		"*.js",
 		"*.png"
