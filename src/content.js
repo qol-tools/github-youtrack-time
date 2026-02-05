@@ -181,7 +181,9 @@ async function addSpentTime(subdomain, issueId, request, token) {
  * @returns {string|null} YouTrack issue ID or null if not found
  */
 function extractYouTrackId() {
-	const titleEl = document.querySelector('.gh-header-title .js-issue-title');
+	// Try new GitHub UI first (2024+), then fall back to old selectors
+	const titleEl = document.querySelector('.markdown-title') ||
+		document.querySelector('.gh-header-title .js-issue-title');
 	if (!titleEl || !titleEl.textContent) {
 		return null;
 	}
@@ -1119,7 +1121,9 @@ function addTimeButton() {
 		return;
 	}
 
-	const header = document.querySelector('.gh-header-actions');
+	// Try new GitHub UI first (2024+), then fall back to old selector
+	const header = document.querySelector('[data-component="PH_Actions"]') ||
+		document.querySelector('.gh-header-actions');
 	if (!header) {
 		return;
 	}
@@ -1179,7 +1183,9 @@ function tryAddButton() {
 		return; // Title not loaded yet or no YouTrack ID
 	}
 
-	const header = document.querySelector('.gh-header-actions');
+	// Try new GitHub UI first (2024+), then fall back to old selector
+	const header = document.querySelector('[data-component="PH_Actions"]') ||
+		document.querySelector('.gh-header-actions');
 	if (!header) {
 		return; // Header not loaded yet
 	}
