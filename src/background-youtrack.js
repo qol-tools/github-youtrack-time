@@ -11,6 +11,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			});
 		return true; // Keep message channel open for async response
 	}
+
+	if (message.action === 'ide.checkout') {
+		// Handle IDE checkout request via qol-tray daemon
+		handleIDECheckout(message)
+			.then(sendResponse)
+			.catch(error => {
+				sendResponse({ ok: false, error: error.message || 'Request failed' });
+			});
+		return true;
+	}
+
 	return false;
 });
 
@@ -56,5 +67,30 @@ async function handleYouTrackRequest(message) {
 		}
 	} catch (error) {
 		return { ok: false, error: error.message || 'Network error' };
+	}
+}
+
+// IDE Checkout via qol-tray daemon
+const IDE_CHECKOUT_PORT = 42710;
+
+async function handleIDECheckout(message) {
+	const { projectPath, branch } = message;
+
+	try {
+		const response = await fetch(`http://localhost:${IDE_CHECKOUT_PORT}/checkout`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ projectPath, branch })
+		});
+
+		const data = await response.json();
+
+		if (response.ok && data.success) {
+			return { ok: true, data };
+		} else {
+			return { ok: false, error: data.error || 'Checkout failed' };
+		}
+	} catch (error) {
+		return { ok: false, error: error.message || 'Daemon not available' };
 	}
 }
