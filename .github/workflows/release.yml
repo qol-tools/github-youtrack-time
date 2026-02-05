@@ -25,7 +25,12 @@ jobs:
       - name: Build dist
         run: node build.js
 
-      - name: Build and sign addon
+      - name: Package Chrome extension
+        run: |
+          cd dist-chrome
+          zip -r ../github-youtrack-time-chrome.zip .
+
+      - name: Build and sign Firefox addon
         env:
           MOZILLA_API_KEY: ${{ secrets.MOZILLA_API_KEY }}
           MOZILLA_API_SECRET: ${{ secrets.MOZILLA_API_SECRET }}
@@ -40,7 +45,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: web-ext-artifacts/*.xpi
+          files: |
+            web-ext-artifacts/*.xpi
+            github-youtrack-time-chrome.zip
           draft: false
           prerelease: false
         env:
