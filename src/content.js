@@ -635,7 +635,7 @@ function createElement(tag, props, ...children) {
 	return el;
 }
 
-function createModal(issueId) {
+function createModal(issueId, triggerElement = null) {
 	const existingModal = document.querySelector('.yt-time-modal');
 	if (existingModal) {
 		existingModal.remove();
@@ -1062,7 +1062,15 @@ function createModal(issueId) {
 	modalContent.appendChild(buttonsDiv);
 
 	overlay.appendChild(modalContent);
-	document.body.appendChild(overlay);
+
+	// If button is inside a dialog/modal, append our overlay there to prevent parent from closing
+	const parentDialog = triggerElement?.closest('[role="dialog"], [aria-modal="true"], [data-component*="Overlay"], [data-component*="Modal"], [data-component*="Dialog"]');
+	if (parentDialog) {
+		overlay.style.position = 'absolute';
+		parentDialog.appendChild(overlay);
+	} else {
+		document.body.appendChild(overlay);
+	}
 
 	// Helper functions
 	const showError = (message) => {
@@ -1070,8 +1078,19 @@ function createModal(issueId) {
 		errorDiv.style.display = 'block';
 	};
 
+	let escapeHandler = null;
+	const previouslyFocused = document.activeElement;
+
 	const closeModal = () => {
+		if (escapeHandler) {
+			document.removeEventListener('keydown', escapeHandler, true);
+			escapeHandler = null;
+		}
 		overlay.remove();
+		// Restore focus to prevent GitHub's modal from closing
+		if (previouslyFocused && previouslyFocused.focus) {
+			previouslyFocused.focus();
+		}
 	};
 
 	const loadWorkItemTypes = async (subdomain, token) => {
@@ -1342,20 +1361,28 @@ function createModal(issueId) {
 		}
 	});
 
-	cancelButton.addEventListener('click', closeModal);
+	cancelButton.addEventListener('click', (e) => {
+		e.stopPropagation();
+		closeModal();
+	});
 
 	// Only close if both mousedown and mouseup happen on overlay
 	let mouseDownOnOverlay = false;
 	overlay.addEventListener('mousedown', event => {
+		event.stopPropagation();
 		if (event.target === overlay) {
 			mouseDownOnOverlay = true;
 		}
 	});
 	overlay.addEventListener('mouseup', event => {
+		event.stopPropagation();
 		if (event.target === overlay && mouseDownOnOverlay) {
 			closeModal();
 		}
 		mouseDownOnOverlay = false;
+	});
+	overlay.addEventListener('click', event => {
+		event.stopPropagation();
 	});
 
 	submitButton.addEventListener('click', async () => {
@@ -1461,9 +1488,21 @@ function createModal(issueId) {
 		}
 
 		if (event.key === 'Escape') {
+			event.preventDefault();
+			event.stopImmediatePropagation();
 			closeModal();
 		}
 	});
+
+	// Capture Escape at document level to prevent GitHub's handlers
+	escapeHandler = (event) => {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			closeModal();
+		}
+	};
+	document.addEventListener('keydown', escapeHandler, true);
 }
 
 function addTimeButtonToContainer(container, issueId) {
@@ -1494,8 +1533,9 @@ function addTimeButtonToContainer(container, issueId) {
 	btn.appendChild(svg);
 	btn.appendChild(document.createTextNode('Add Time'));
 
-	btn.addEventListener('click', () => {
-		createModal(issueId);
+	btn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		createModal(issueId, btn);
 	});
 
 	btn.addEventListener('contextmenu', (e) => {
